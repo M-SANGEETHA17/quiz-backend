@@ -15,7 +15,7 @@ async function testApi() {
     form.append('pdf', fs.createReadStream('C:/Users/HP/OneDrive/Desktop/QuizApp/backend/test2.pdf')); 
 
     console.log('Sending real PDF to Render API...');
-    const response = await fetch('http://localhost:5000/api/generate-quiz', {
+    const response = await fetch('https://quiz-api-9iji.onrender.com/api/generate-quiz', {
       method: 'POST',
       body: form
     });

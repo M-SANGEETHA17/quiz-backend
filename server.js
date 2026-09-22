@@ -39,6 +39,8 @@ const quizSchema = new mongoose.Schema({
 });
 const Quiz = mongoose.model('Quiz', quizSchema);
 
+let lastError = null;
+
 // The Main Route
 app.post('/api/generate-quiz', upload.single('pdf'), async (req, res) => {
   try {
@@ -102,9 +104,14 @@ ${extractedText}
     res.json(quizJson);
 
   } catch (error) {
+    lastError = { message: error.message, stack: error.stack, time: new Date() };
     console.error('Error in /api/generate-quiz:', error);
     res.status(500).json({ error: 'Failed to generate quiz', details: error.message, stack: error.stack });
   }
+});
+
+app.get('/api/logs', (req, res) => {
+  res.json({ lastError });
 });
 
 const PORT = process.env.PORT || 5000;
