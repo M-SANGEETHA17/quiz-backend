@@ -57,51 +57,78 @@ app.post('/api/generate-quiz', upload.single('pdf'), async (req, res) => {
       return res.status(400).json({ error: 'Could not extract text from the PDF. It might be empty or scanned.' });
     }
 
-    // 2. Prepare Gemini Prompt
-    console.log('Sending text to Gemini API...');
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    console.log(`Extracted ${extractedText.length} characters of text.`);
 
-    const prompt = `
-You are an expert educational AI. I will provide you with text extracted from a PDF.
-Your task is to identify and extract multiple-choice questions (with their options and correct answers) from the text.
+    // 2. Split text into chunks (approx 30,000 chars per chunk to avoid output limits)
+    const chunkSize = 30000;
+    const chunks = [];
+    for (let i = 0; i < extractedText.length; i += chunkSize) {
+      chunks.push(extractedText.substring(i, i + chunkSize));
+    }
+    
+    console.log(`Processing ${chunks.length} chunk(s) to Gemini API...`);
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    let allQuestions = [];
+    let questionIdCounter = 1;
+
+    // 3. Process each chunk sequentially to avoid rate limits
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`Generating questions for chunk ${i + 1}/${chunks.length}...`);
+      
+      const prompt = `
+You are an expert educational AI. I will provide you with a chunk of text extracted from a large PDF.
+Your task is to identify and extract multiple-choice questions (with their options and correct answers) from this text.
 If the text does not contain explicit options, generate 4 plausible options based on the context, with one correct answer.
+If this chunk has NO questions or educational content, just return an empty array [].
 
 CRITICAL INSTRUCTION:
-You MUST respond ONLY with a valid JSON array of objects. Do NOT wrap the JSON in Markdown code blocks (\`\`\`json). Do NOT add any conversational text before or after the JSON.
+You MUST respond ONLY with a valid JSON array of objects. Do NOT wrap the JSON in Markdown code blocks (\`\`\`json). Do NOT add any conversational text.
 
 Expected JSON format:
 [
   {
-    "id": 1,
     "question": "The actual question text?",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "answer": "Option B"
   }
 ]
 
-Here is the extracted text:
+Here is the extracted text chunk:
 -----------------------
-${extractedText}
+${chunks[i]}
 -----------------------
-    `;
+      `;
 
-    // 3. Call Gemini
-    const result = await model.generateContent(prompt);
-    const responseText = await result.response.text();
-    
-    // 4. Parse the JSON
-    // Clean up potential markdown formatting if Gemini still adds it despite instructions
-    let cleanJsonStr = responseText.trim();
-    if (cleanJsonStr.startsWith('```json')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleanJsonStr.startsWith('```')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```/, '').replace(/```$/, '').trim();
+      try {
+        const result = await model.generateContent(prompt);
+        const responseText = await result.response.text();
+        
+        let cleanJsonStr = responseText.trim();
+        if (cleanJsonStr.startsWith('```json')) {
+          cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
+        } else if (cleanJsonStr.startsWith('```')) {
+          cleanJsonStr = cleanJsonStr.replace(/^```/, '').replace(/```$/, '').trim();
+        }
+
+        const chunkQuestions = JSON.parse(cleanJsonStr);
+        if (Array.isArray(chunkQuestions)) {
+          allQuestions = allQuestions.concat(chunkQuestions);
+        }
+      } catch (chunkError) {
+        console.error(`Error processing chunk ${i+1}:`, chunkError.message);
+        // We continue to the next chunk even if one fails
+      }
     }
 
-    const quizJson = JSON.parse(cleanJsonStr);
+    // Assign sequential IDs
+    allQuestions = allQuestions.map((q) => {
+      return { id: questionIdCounter++, ...q };
+    });
 
-    // 5. Send back to frontend
-    res.json(quizJson);
+    console.log(`Successfully generated total ${allQuestions.length} questions.`);
+
+    // 4. Send back to frontend
+    res.json(allQuestions);
 
   } catch (error) {
     lastError = { message: error.message, stack: error.stack, time: new Date() };
