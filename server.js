@@ -103,7 +103,7 @@ ${extractedText}
 
   } catch (error) {
     console.error('Error in /api/generate-quiz:', error);
-    res.status(500).json({ error: 'Failed to generate quiz', details: error.message });
+    res.status(500).json({ error: 'Failed to generate quiz', details: error.message, stack: error.stack });
   }
 });
 
