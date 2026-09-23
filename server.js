@@ -7,7 +7,8 @@ const multer = require('multer');
 global.DOMMatrix = class DOMMatrix {};
 global.ImageData = class ImageData {};
 global.Path2D = class Path2D {};
-const pdfParse = require('pdf-parse');
+const PDFExtract = require('pdf.js-extract').PDFExtract;
+const pdfExtract = new PDFExtract();
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const mongoose = require('mongoose');
@@ -40,18 +41,28 @@ const quizSchema = new mongoose.Schema({
 const Quiz = mongoose.model('Quiz', quizSchema);
 
 let lastError = null;
+let debugLogs = [];
 
 // The Main Route
 app.post('/api/generate-quiz', upload.single('pdf'), async (req, res) => {
   try {
+    debugLogs = []; // Reset on new request
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });
     }
 
-    // 1. Extract text from PDF
+    // 1. Extract text from PDF using pdf.js-extract
     console.log('Extracting text from PDF...');
-    const pdfData = await pdfParse(req.file.buffer);
-    const extractedText = pdfData.text;
+    const data = await pdfExtract.extractBuffer(req.file.buffer, {});
+    let extractedText = '';
+    data.pages.forEach(page => {
+      page.content.forEach(item => {
+        extractedText += item.str + ' ';
+      });
+      extractedText += '\n';
+    });
+
+    debugLogs.push(`Extracted text length: ${extractedText.length}`);
 
     if (!extractedText || extractedText.trim().length === 0) {
       return res.status(400).json({ error: 'Could not extract text from the PDF. It might be empty or scanned.' });
@@ -66,6 +77,7 @@ app.post('/api/generate-quiz', upload.single('pdf'), async (req, res) => {
       chunks.push(extractedText.substring(i, i + chunkSize));
     }
     
+    debugLogs.push(`Total chunks: ${chunks.length}`);
     console.log(`Processing ${chunks.length} chunk(s) to Gemini API...`);
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     let allQuestions = [];
@@ -73,6 +85,7 @@ app.post('/api/generate-quiz', upload.single('pdf'), async (req, res) => {
 
     // 3. Process each chunk sequentially to avoid rate limits
     for (let i = 0; i < chunks.length; i++) {
+      debugLogs.push(`Processing chunk ${i + 1}/${chunks.length}...`);
       console.log(`Generating questions for chunk ${i + 1}/${chunks.length}...`);
       
       const prompt = `
@@ -99,11 +112,12 @@ ${chunks[i]}
 -----------------------
       `;
 
+      let cleanJsonStr = '';
       try {
         const result = await model.generateContent(prompt);
         const responseText = await result.response.text();
         
-        let cleanJsonStr = responseText.trim();
+        cleanJsonStr = responseText.trim();
         if (cleanJsonStr.startsWith('```json')) {
           cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
         } else if (cleanJsonStr.startsWith('```')) {
@@ -113,8 +127,12 @@ ${chunks[i]}
         const chunkQuestions = JSON.parse(cleanJsonStr);
         if (Array.isArray(chunkQuestions)) {
           allQuestions = allQuestions.concat(chunkQuestions);
+          debugLogs.push(`Chunk ${i+1} success: found ${chunkQuestions.length} questions.`);
+        } else {
+          debugLogs.push(`Chunk ${i+1} parsed JSON but not an array.`);
         }
       } catch (chunkError) {
+        debugLogs.push(`Chunk ${i+1} error: ${chunkError.message}. Response was: ${cleanJsonStr || 'none'}`);
         console.error(`Error processing chunk ${i+1}:`, chunkError.message);
         // We continue to the next chunk even if one fails
       }
@@ -125,6 +143,7 @@ ${chunks[i]}
       return { id: questionIdCounter++, ...q };
     });
 
+    debugLogs.push(`Successfully generated total ${allQuestions.length} questions.`);
     console.log(`Successfully generated total ${allQuestions.length} questions.`);
 
     // 4. Send back to frontend
@@ -138,7 +157,7 @@ ${chunks[i]}
 });
 
 app.get('/api/logs', (req, res) => {
-  res.json({ lastError });
+  res.json({ lastError, debugLogs });
 });
 
 const PORT = process.env.PORT || 5000;
