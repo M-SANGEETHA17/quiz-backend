@@ -7,8 +7,7 @@ const multer = require('multer');
 global.DOMMatrix = class DOMMatrix {};
 global.ImageData = class ImageData {};
 global.Path2D = class Path2D {};
-const PDFExtract = require('pdf.js-extract').PDFExtract;
-const pdfExtract = new PDFExtract();
+const pdfParse = require('pdf-parse');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const mongoose = require('mongoose');
@@ -51,16 +50,10 @@ app.post('/api/generate-quiz', upload.single('pdf'), async (req, res) => {
       return res.status(400).json({ error: 'No PDF file uploaded' });
     }
 
-    // 1. Extract text from PDF using pdf.js-extract
+    // 1. Extract text from PDF
     console.log('Extracting text from PDF...');
-    const data = await pdfExtract.extractBuffer(req.file.buffer, {});
-    let extractedText = '';
-    data.pages.forEach(page => {
-      page.content.forEach(item => {
-        extractedText += item.str + ' ';
-      });
-      extractedText += '\n';
-    });
+    const pdfData = await pdfParse(req.file.buffer);
+    const extractedText = pdfData.text;
 
     debugLogs.push(`Extracted text length: ${extractedText.length}`);
 
