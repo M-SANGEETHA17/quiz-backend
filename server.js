@@ -134,8 +134,21 @@ ${chunks[i]}
       } catch (chunkError) {
         debugLogs.push(`Chunk ${i+1} error: ${chunkError.message}. Response was: ${cleanJsonStr || 'none'}`);
         console.error(`Error processing chunk ${i+1}:`, chunkError.message);
-        // We continue to the next chunk even if one fails
+        
+        // If it's a rate limit or server error, throw it so the user sees the error!
+        if (chunkError.message.includes('429') || chunkError.status === 429) {
+            throw new Error('Google AI Rate Limit Exceeded! The PDF is too large to process all at once on the free tier. Try a smaller PDF.');
+        }
       }
+
+      // Add a 3 second delay between chunks to avoid hitting 15 RPM limit
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+
+    if (allQuestions.length === 0) {
+        throw new Error('AI could not find any readable questions or educational content in this PDF. It might be an image-only scanned PDF or have unreadable text format.');
     }
 
     // Assign sequential IDs
