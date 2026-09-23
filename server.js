@@ -128,15 +128,20 @@ ${chunks[i]}
         debugLogs.push(`Chunk ${i+1} error: ${chunkError.message}. Response was: ${cleanJsonStr || 'none'}`);
         console.error(`Error processing chunk ${i+1}:`, chunkError.message);
         
-        // If it's a rate limit or server error, throw it so the user sees the error!
+        // If we hit a rate limit, but we already have some questions, just break and return what we have!
         if (chunkError.message.includes('429') || chunkError.status === 429) {
-            throw new Error('Google AI Rate Limit Exceeded! The PDF is too large to process all at once on the free tier. Try a smaller PDF.');
+            if (allQuestions.length > 0) {
+                console.log('Rate limit hit, but we already have questions. Stopping early and returning them.');
+                break; // Exit the loop and return existing questions
+            } else {
+                throw new Error('Google AI Rate Limit Exceeded! The PDF is too large to process all at once on the free tier. Try a smaller PDF.');
+            }
         }
       }
 
-      // Add a 3 second delay between chunks to avoid hitting 15 RPM limit
+      // Add a 5 second delay between chunks to avoid hitting RPM limit
       if (i < chunks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
 

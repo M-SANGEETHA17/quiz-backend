@@ -3,7 +3,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 async function testGemini() {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
   const prompt = `
 You are an expert educational AI. I will provide you with a chunk of text extracted from a large PDF.
 Your task is to identify and extract multiple-choice questions (with their options and correct answers) from this text.
