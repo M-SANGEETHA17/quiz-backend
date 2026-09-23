@@ -128,12 +128,15 @@ ${chunks[i]}
         debugLogs.push(`Chunk ${i+1} error: ${chunkError.message}. Response was: ${cleanJsonStr || 'none'}`);
         console.error(`Error processing chunk ${i+1}:`, chunkError.message);
         
-        // If we hit a rate limit, but we already have some questions, just break and return what we have!
-        if (chunkError.message.includes('429') || chunkError.status === 429) {
+        // If we hit a rate limit or 503, but we already have some questions, just break and return what we have!
+        if (chunkError.message.includes('429') || chunkError.status === 429 || chunkError.message.includes('503') || chunkError.status === 503) {
             if (allQuestions.length > 0) {
-                console.log('Rate limit hit, but we already have questions. Stopping early and returning them.');
+                console.log('API error hit, but we already have questions. Stopping early and returning them.');
                 break; // Exit the loop and return existing questions
             } else {
+                if (chunkError.message.includes('503') || chunkError.status === 503) {
+                    throw new Error('Google AI is currently experiencing high demand (503 Service Unavailable). Please wait a few minutes and try again.');
+                }
                 throw new Error('Google AI Rate Limit Exceeded! The PDF is too large to process all at once on the free tier. Try a smaller PDF.');
             }
         }
